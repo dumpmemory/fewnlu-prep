@@ -2,14 +2,15 @@ import random
 from collections import Counter, defaultdict
 from typing import List
 
-import log
-from methods.utils import InputExample, eq_div
-from tasks.base_processor import ProcessorOutputPattern, UNLABELED_SET, TRAIN_SET, DEV32_SET, DEV_SET, TEST_SET, \
-    AUGMENTED_SET, SET_TYPES
+import log as log
 from tasks.superglue.processor import SUPERGLUE_PROCESSORS
 from tasks.superglue.pvp import SUPERGLUE_PVPS, SUPERGLUE_METRICS
+from utils import InputExample, eq_div
+from tasks.base_processor import ProcessorOutputPattern
 
-logger = log.get_logger('root')
+from global_vars import UNLABELED_SET, TRAIN_SET, DEV32_SET, DEV_SET, TEST_SET, AUGMENTED_SET, SET_TYPES
+
+logger = log.get_logger()
 
 def _shuffle_and_restrict(examples: List[InputExample], num_examples: int, seed: int = 42) -> List[InputExample]:
     """
@@ -126,14 +127,6 @@ def load_examples(dataset_name: str,
 
 
 
-DATASETS={
-    "superglue": {
-        "processors": SUPERGLUE_PROCESSORS,
-        "pvps": SUPERGLUE_PVPS,
-        "metrics": SUPERGLUE_METRICS,
-    }
-}
-
 
 
 def load_dataset(args):
@@ -166,10 +159,16 @@ def load_dataset(args):
     eval_data = load_examples(dataset_name, task_name, data_dir, eval_set, use_cloze, eval_ex, eval_ex_per_label, seed)
 
     # if (args.method == "lm_training" and args.use_unlabeled_data_lm_training) or (args.method == "ipet"):
-    if (args.method == "lm_training") or (args.method == "ipet"):
-        unlabeled_data = load_examples(dataset_name, task_name, data_dir, UNLABELED_SET, use_cloze, args.unlabeled_examples, None, seed)
-    else:
-        unlabeled_data = None
+    # import pdb 
+    # pdb.set_trace()
+    unlabeled_data = load_examples(dataset_name, task_name, data_dir, UNLABELED_SET, use_cloze, args.unlabeled_examples, None, seed)
 
     return train_data, dev32_data, eval_data, unlabeled_data
 
+DATASETS={
+    "superglue": {
+        "processors": SUPERGLUE_PROCESSORS,
+        "pvps": SUPERGLUE_PVPS,
+        "metrics": SUPERGLUE_METRICS,
+    }
+}

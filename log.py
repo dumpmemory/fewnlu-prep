@@ -14,34 +14,47 @@
 This file contains basic logging logic.
 """
 import logging
+import os
+
+# logging
+LOG_NAME = "root"
+LOG_PATH = "../save/logs"
 
 names = set()
 
 
 def __setup_custom_logger(name: str) -> logging.Logger:
-    root_logger = logging.getLogger()
-    root_logger.handlers.clear()
-
-    formatter = logging.Formatter(fmt='%(asctime)s - %(levelname)s - %(module)s - %(message)s')
+    # root_logger = logging.getLogger()
+    # root_logger.handlers.clear()
 
     names.add(name)
 
+    logger = logging.getLogger(name)
+    logger.setLevel(logging.DEBUG)
+    formatter = logging.Formatter(fmt='%(asctime)s - %(levelname)s - %(filename)s - %(message)s')
+
+    # Add file handler
+    file_handler = logging.FileHandler(os.path.join(LOG_PATH, name + ".txt"))
+    file_handler.setFormatter(formatter)
+    file_handler.setLevel(logging.DEBUG)
+
+    # Add stream handler
     handler = logging.StreamHandler()
     handler.setFormatter(formatter)
+    handler.setLevel(logging.INFO)
 
-    logger = logging.getLogger(name)
-    logger.setLevel(logging.INFO)
     logger.addHandler(handler)
-
-    # todo
-    file_handler = logging.FileHandler(name + ".txt")
-    file_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
 
     return logger
 
 
-def get_logger(name: str) -> logging.Logger:
+def get_logger(name:str=None) -> logging.Logger:
+    if name is None:
+        name = LOG_NAME
+    if not os.path.exists(LOG_PATH):
+        os.makedirs(LOG_PATH)
+
     if name in names:
         return logging.getLogger(name)
     else:

@@ -1,16 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import List
 
-from methods.utils import InputExample
-
-TRAIN_SET = "train"
-DEV_SET = "dev"
-TEST_SET = "test"
-DEV32_SET = "dev32"
-UNLABELED_SET = "unlabeled"
-AUGMENTED_SET = "augmented"
-
-SET_TYPES = [TRAIN_SET, DEV_SET, TEST_SET, DEV32_SET, UNLABELED_SET, AUGMENTED_SET]
+from utils import InputExample
 
 ProcessorOutputPattern = List[InputExample]
 

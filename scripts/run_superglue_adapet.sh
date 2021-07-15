@@ -1,21 +1,24 @@
 task_name=$1
 device=$2
 model_type=$3
+few_shot_setting=$4
 
 
 dataset_name="superglue"
 method="adapet"
-data_dir='/workspace/yanan/few-shot/FewGLUE_dev32/'
-save_dir="checkpoints/${model_type}_${task_name}_${method}_model"
+arch_method="default"
+data_dir='/workspace/yanan/zyn/few-shot/FewGLUE_dev32/'
+save_dir="adapet_checkpoints/${few_shot_setting}/${model_type}_${task_name}_${method}_model"
 
 
 if [ $model_type = "albert" ]; then
+#   model_name_or_path="albert-xxlarge-v2"
   model_name_or_path="albert-xxlarge-v2"
   TRAIN_BATCH_SIZE_CANDIDATES="8 4 2 1"
   LR_CANDIDATES="1e-5 2e-5"
 
 elif [ $model_type = "deberta" ]; then
-  model_name_or_path="microsoft/deberta-v2-xxlarge"
+  model_name_or_path="/workspace/zhoujing/huggingface_models/deberta-v2-xxlarge"
   TRAIN_BATCH_SIZE_CANDIDATES="2 1"
   LR_CANDIDATES="1e-5 5e-6"
 fi
@@ -36,8 +39,18 @@ echo ------------------------------------
 
 SEQ_LENGTH=256
 EVAL_BATCH_SIZE=32
-PATTERN_IDS="0 1"
+DATA_ROOT=$data_dir
+TASK=$task_name
 
+MAX_STEP=1000
+every_eval_ratios=0.25
+# MAX_STEP=50
+TOTAL_BATCH_SIZE=16
+TRAIN_BATCH_SIZE=2
+LR=1e-5
+
+SAMPLER_SEED="10 20 30"
+max_num_lbl_tok=1
 if [ $TASK = "wic" ]; then
   DATA_DIR=${DATA_ROOT}WiC
   PATTERN_IDS="0 1 2"
@@ -45,6 +58,7 @@ if [ $TASK = "wic" ]; then
 elif [ $TASK = "rte" ]; then
   DATA_DIR=${DATA_ROOT}RTE
   PATTERN_IDS="0 1 2 3 4"
+  # PATTERN_IDS="0"
 
 elif [ $TASK = "cb" ]; then
   DATA_DIR=${DATA_ROOT}CB
@@ -55,6 +69,8 @@ elif [ $TASK = "wsc" ]; then
   SEQ_LENGTH=128
   EVAL_BATCH_SIZE=1
   PATTERN_IDS="0 1 2"
+  max_num_lbl_tok=20
+  TRAIN_BATCH_SIZE=1
 
 elif [ $TASK = "boolq" ]; then
   DATA_DIR=${DATA_ROOT}BoolQ
@@ -65,10 +81,13 @@ elif [ $TASK = "copa" ]; then
   SEQ_LENGTH=96
   EVAL_BATCH_SIZE=1
   PATTERN_IDS="0 1"
+  max_num_lbl_tok=20
+  TRAIN_BATCH_SIZE=1
 
 elif [ $TASK = "multirc" ]; then
   DATA_DIR=${DATA_ROOT}MultiRC
-  SEQ_LENGTH=
+  SEQ_LENGTH=512
+  TRAIN_BATCH_SIZE=1
   EVAL_BATCH_SIZE=16
   PATTERN_IDS="0 1 2"
 
@@ -85,43 +104,43 @@ fi
 
 
 
-for MAX_STEP in 1000 500 250
+for PATTERN in $PATTERN_IDS
 do
-  for TOTAL_BATCH_SIZE in 16 32
-  do
-    for TRAIN_BATCH_SIZE in $TRAIN_BATCH_SIZE_CANDIDATES
-    do
-      for LR in $LR_CANDIDATES
-      do
-        for PATTERN in $PATTERN_IDS
-        do
-          for SAMPLER_SEED in 10 20 30
-          do
-          ACCU=$((${TOTAL_BATCH_SIZE}/${TRAIN_BATCH_SIZE}))
-          HYPER_PARAMS=${MAX_STEP}_${TOTAL_BATCH_SIZE}_${TRAIN_BATCH_SIZE}_${ACCU}_${LR}_${PATTERN}_${SAMPLER_SEED}_${SEQ_LENGTH}
-          OUTPUT_DIR=$save_dir/${HYPER_PARAMS}
-          CUDA_VISIBLE_DEVICES=$device python3 cli.py \
-          --method $method \
-          --data_dir $DATA_DIR \
-          --pattern_ids $PATTERN \
-          --model_type $model_type \
-          --model_name_or_path $model_name_or_path \
-          --task_name $task_name \
-          --output_dir $OUTPUT_DIR \
-          --do_eval \
-          --do_train \
-          --sc_per_gpu_eval_batch_size $EVAL_BATCH_SIZE \
-          --sc_per_gpu_train_batch_size $TRAIN_BATCH_SIZE \
-          --sc_gradient_accumulation_steps $ACCU \
-          --sc_max_seq_length $SEQ_LENGTH \
-          --sc_max_steps $MAX_STEP \
-          --sampler_seed $SAMPLER_SEED \
-          --learning_rate $LR \
-          --no_distillation \
-          --pet_repetitions 1
-          done
-        done
-      done
-    done
-  done
+ACCU=$((${TOTAL_BATCH_SIZE}/${TRAIN_BATCH_SIZE}))
+HYPER_PARAMS=${MAX_STEP}_${TOTAL_BATCH_SIZE}_${TRAIN_BATCH_SIZE}_${LR}_${PATTERN}_${SEQ_LENGTH}_${every_eval_ratio}
+OUTPUT_DIR=$save_dir/${HYPER_PARAMS}
+CUDA_VISIBLE_DEVICES=$device nohup python3 cli.py \
+  --method $method \
+  --arch_method $arch_method \
+  --data_dir $DATA_DIR \
+  --pattern_ids $PATTERN \
+  --model_type $model_type \
+  --model_name_or_path $model_name_or_path \
+  --dataset_name $dataset_name \
+  --task_name $task_name \
+  --output_dir $OUTPUT_DIR \
+  --do_eval \
+  --do_train \
+  --per_gpu_eval_batch_size $EVAL_BATCH_SIZE \
+  --per_gpu_train_batch_size $TRAIN_BATCH_SIZE \
+  --gradient_accumulation_steps $ACCU \
+  --max_seq_length $SEQ_LENGTH \
+  --max_steps $MAX_STEP \
+  --sampler_seed $SAMPLER_SEED \
+  --learning_rate $LR \
+  --repetitions 1 \
+  --use_cloze \
+  --max_num_lbl_tok $max_num_lbl_tok \
+  --few_shot_setting $few_shot_setting \
+  --every_eval_ratio $every_eval_ratio >myout_adapet_${task_name}.file 2>&1 &
+  wait
 done
+
+# nohup bash zj_run_superglue_adapet.sh wsc 3 deberta dev32_split >myout.file 2>&1 &
+# nohup bash zj_run_superglue_adapet.sh rte 1 deberta dev32_split >myout.file 2>&1 &
+# nohup bash zj_run_superglue_adapet.sh boolq 2 deberta dev32_split >myout.file 2>&1 &
+# nohup bash zj_run_superglue_adapet.sh multirc 7 deberta dev32_split >myout.file 2>&1 &
+# nohup bash zj_run_superglue_adapet.sh wic 4 deberta dev32_split >myout.file 2>&1 &
+# nohup bash zj_run_superglue_adapet.sh cb 5 deberta dev32_split >myout.file 2>&1 &
+# nohup bash zj_run_superglue_adapet.sh copa 6 deberta dev32_split >myout.file 2>&1 &
+

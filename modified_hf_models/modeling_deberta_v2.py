@@ -1325,6 +1325,20 @@ class DebertaV2ForSequenceClassification(DebertaV2PreTrainedModel):
 
         self.init_weights()
 
+
+    def fix_layers(self, num_of_layer=None):
+        if num_of_layer is None:
+            num_of_layer = len(self.deberta.encoder.layer) // 3
+        self.deberta.encoder.range_of_fixed_layer = num_of_layer
+        for layer_idx in range(num_of_layer):
+            for param in self.deberta.encoder.layer[layer_idx].parameters():
+                param.requires_grad = False
+            self.deberta.encoder.layer[layer_idx] = self.deberta.encoder.layer[layer_idx].half()
+        for param in self.get_input_embeddings().parameters():
+            param.requires_grad = False
+
+
+
     def get_input_embeddings(self):
         return self.deberta.get_input_embeddings()
 
@@ -1369,7 +1383,10 @@ class DebertaV2ForSequenceClassification(DebertaV2PreTrainedModel):
             return_dict=return_dict,
         )
 
-        encoder_layer = outputs[0]
+        # encoder_layer = outputs[0]
+        outputs = outputs[0]
+        encoder_layer = outputs.hidden_states[-1]
+
         pooled_output = self.pooler(encoder_layer)
         pooled_output = self.dropout(pooled_output)
         logits = self.classifier(pooled_output)
@@ -1394,6 +1411,7 @@ class DebertaV2ForSequenceClassification(DebertaV2PreTrainedModel):
             else:
                 log_softmax = torch.nn.LogSoftmax(-1)
                 loss = -((log_softmax(logits) * labels).sum(-1)).mean()
+
         if not return_dict:
             output = (logits,) + outputs[1:]
             return ((loss,) + output) if loss is not None else output
@@ -1504,6 +1522,7 @@ class DebertaV2ForTokenClassification(DebertaV2PreTrainedModel):
     """,
     DEBERTA_START_DOCSTRING,
 )
+
 # Copied from transformers.models.deberta.modeling_deberta.DebertaForQuestionAnswering with Deberta->DebertaV2
 class DebertaV2ForQuestionAnswering(DebertaV2PreTrainedModel):
     _keys_to_ignore_on_load_unexpected = [r"pooler"]

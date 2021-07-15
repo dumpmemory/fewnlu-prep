@@ -11,35 +11,55 @@
 # limitations under the License.
 
 """
-This script can be used to train and evaluate either a regular supervised model or a PET/iPET model on
+This script can be used to train and evaluate either a few-shot method on
 one of the supported tasks and datasets.
 """
 
-import copy
 import json
 import shutil
 import time
 from collections import defaultdict
-import random
-from typing import Tuple, Dict, List
+from typing import Dict
 import statistics
-
-import numpy as np
+import random
+import itertools
 
 from arguments import get_args
-from configs import get_wrapper_config, get_train_eval_config
+from configs import get_wrapper_config, get_train_eval_config, get_data_config
 import os
 import torch
 import log
-from methods.utils import save_predictions, set_seed, save_logits, InputExample, softmax, LogitsList, eq_div
-from methods.wrapper import TransformerModelWrapper
+from utils import save_predictions, set_seed, save_logits, InputExample
+from augmentation import generate_ipet_train_sets
+from wrapper import TransformerModelWrapper
 from tasks.dataloader import load_dataset, DATASETS
 
-logger = log.get_logger('root')
+from global_vars import DEFAULT_METRICS, TRAIN_EVAL_CONFIG_NAME
 
-DEFAULT_METRICS = ["acc"]
+logger = log.get_logger()
 
-def _write_results(path: str, results: Dict):
+# def _write_results(path: str, results: Dict):
+#     with open(path, 'w') as fh:
+#         for metric in results.keys():
+#             for pattern_id, values in results[metric].items():
+#                 mean = statistics.mean(values)
+#                 stdev = statistics.stdev(values) if len(values) > 1 else 0
+#                 result_str = "{}-p{}: {} +- {}".format(metric, pattern_id, mean, stdev)
+#                 logger.info(result_str)
+#                 fh.write(result_str + '\n')
+#         for metric in results.keys():
+#             all_results = [result for pattern_results in results[metric].values() for result in pattern_results]
+#             all_mean = statistics.mean(all_results)
+#             all_stdev = statistics.stdev(all_results) if len(all_results) > 1 else 0
+#             result_str = "{}-all-p: {} +- {}".format(metric, all_mean, all_stdev)
+#             logger.info(result_str)
+#             fh.write(result_str + '\n')
+
+
+
+def _write_results(path: str, results: Dict, dev32_results=None):
+
+    ret_dict = {"dev32": {}, "dev": {}}
     with open(path, 'w') as fh:
         for metric in results.keys():
             for pattern_id, values in results[metric].items():
@@ -56,356 +76,369 @@ def _write_results(path: str, results: Dict):
             result_str = "{}-all-p: {} +- {}".format(metric, all_mean, all_stdev)
             logger.info(result_str)
             fh.write(result_str + '\n')
+            ret_dict["dev"][metric] = all_mean
+            # ret_dict["dev"]["all_stdev"][metric] = all_stdev
 
+        if dev32_results is not None:
+            for metric in dev32_results.keys():
+                all_results = [result for pattern_results in dev32_results[metric].values() for result in pattern_results]
+                all_mean = statistics.mean(all_results)
+                all_stdev = statistics.stdev(all_results) if len(all_results) > 1 else 0
+                result_str = "{}-dev32-all-p: {} +- {}".format(metric, all_mean, all_stdev)
+                logger.info(result_str)
+                fh.write(result_str + '\n')
+                ret_dict["dev32"][metric] = all_mean
+                # ret_dict["dev32"]["all_stdev"][metric] = all_stdev
+    return ret_dict
 
-def generate_ipet_train_sets(train_data: List[InputExample],
-                             unlabeled_data: List[InputExample],
-                             labels: List[str],
-                             logits_dir: str,
-                             output_dir: str,
-                             reduction: str,
-                             num_new_examples: int,
-                             logits_percentage: float,
-                             n_most_likely: int,
-                             seed: int):
-    subdirs = next(os.walk(logits_dir))[1]
-    if not os.path.exists(output_dir):
-        os.makedirs(output_dir)
-    logger.info("Found the following {} subdirectories: {}".format(len(subdirs), subdirs))
-    if train_data:
-        train_examples_per_label = [sum(1 for ex in train_data if ex.label == label) for label in labels]
-        multiplier = num_new_examples / len(train_data)
-        examples_per_label = [int(epl * multiplier) for epl in train_examples_per_label]
-        logger.info(f"Example distribution in the original dataset: {train_examples_per_label}")
+def prepare_splited_data(args,train_data,dev32_data):
+    train_datas=[];dev32_datas=[]
+    if args.few_shot_setting in ['fix_setting','dev32_setting']:
+        train_datas.append(train_data);dev32_datas.append(dev32_data)
     else:
-        examples_per_label = eq_div(num_new_examples, len(labels))
-
-    logger.info(f"Target distribution for the new dataset: {examples_per_label}")
-
-    for example in unlabeled_data:
-        example.label, example.logits = None, None
-
-    logits_lists = {}
-
-    rng = random.Random(seed)
-    rng_np = np.random.RandomState(seed)
-
-    for subdir in subdirs:
-        results_file = os.path.join(logits_dir, subdir, 'results.txt')
-        logits_file = os.path.join(logits_dir, subdir, 'logits.txt')
-        logits = []
-        # if not os.path.exists(results_file) or not os.path.exists(logits_file):
-        if not os.path.exists(logits_file):
-            logger.warning(f"Skipping subdir '{subdir}' because 'results.txt' or 'logits.txt' not found")
-            continue
-
-        if reduction == 'mean':
-            result_train = 1
-        """
+        all_data=train_data+dev32_data
+        cur_all_data = {}
+        # logger.info(args.task_name)
+        if args.task_name not in ["multirc", 'copa']:
+            assert len(train_data) == len(dev32_data)
+            number = len(train_data)
         else:
-            with open(results_file, 'r') as fh:
-                results = ast.literal_eval(fh.read())
-                result_train = results['train_set_before_training']
-        """
-        with open(logits_file, 'r') as fh:
-            for line in fh.read().splitlines():
-                example_logits = [float(x) for x in line.split()]
-                logits.append(example_logits)
+            cur_all_data = {}
+            for item in all_data:
+                guid  = "-".join(item.guid.split("-")[:-1])
+                if guid in cur_all_data:
+                    cur_all_data[guid].append(item)
+                else:
+                    cur_all_data[guid] = [item]
+            all_num = len(cur_all_data)
+            number = int(all_num / 2)
+            cur_all_data = list(cur_all_data.items())
+        K=args.cv_k
+        for idx in range(K):
+            if args.task_name not in ['multirc','copa']:
+                random.shuffle(all_data)
+                cur_train_data = all_data[:number]
+                cur_dev32_data = all_data[number:]
+            else:
+                random.shuffle(cur_all_data)
+                cur_train_data_set = [data_list for (guid, data_list) in cur_all_data[:number]]
+                cur_dev32_data_set = [data_list for (guid, data_list) in cur_all_data[number:]]
+                cur_train_data = list(itertools.chain.from_iterable(cur_train_data_set))
+                cur_dev32_data = list(itertools.chain.from_iterable(cur_dev32_data_set))
+            train_datas.append(cur_train_data)
+            dev32_datas.append(cur_dev32_data)
+    return train_datas,dev32_datas 
 
-        logger.info("File {}: Score = {}, #Logits = {}, #Labels = {}".format(
-            results_file, result_train, len(logits), len(logits[0])))
+def iterative_run(train_datas, dev32_datas, eval_data, wrapper_config, train_eval_config, unlabeled_data=None, aug_data=None, output_dir=None):
+    output_dir = output_dir if output_dir is not None else wrapper_config.output_dir
+    if train_eval_config.generations==1:
+        results=run(train_datas, dev32_datas, eval_data, wrapper_config, train_eval_config, output_dir, unlabeled_data, aug_data, save_unlabeled_logits=False)
+        return results
 
-        loglist = LogitsList(score=result_train, logits=logits)
-        logits_lists[subdir] = loglist
-
-    print(subdirs)
-    for subdir in subdirs:
-
-        other_logits_lists = [ll for sd, ll in logits_lists.items() if sd != subdir]
-        subdir_train_set = generate_ipet_train_set(
-            other_logits_lists, labels=labels, original_data=unlabeled_data, examples_per_label=examples_per_label,
-            logits_percentage=logits_percentage, reduction=reduction, n_most_likely=n_most_likely, rng=rng,
-            rng_np=rng_np
-        )
-        InputExample.save_examples(subdir_train_set,
-                                   os.path.join(output_dir, subdir + '-train.bin'))
-
-
-def generate_ipet_train_set(logits_lists: List[LogitsList], labels: List[str], original_data: List[InputExample],
-                            examples_per_label: List[int], logits_percentage: float, reduction: str = 'mean',
-                            n_most_likely: int = -1, rng=None, rng_np=None) -> List[InputExample]:
-
-    assert len(set(len(ll.logits) for ll in logits_lists)) == 1
-
-    if not rng:
-        rng = random.Random()
-    if not rng_np:
-        rng_np = np.random.RandomState()
-
-    num_logits_lists = max(round(len(logits_lists) * logits_percentage), 1)
-    logits_lists = rng.sample(logits_lists, k=num_logits_lists)
-    logits = np.array([ll.logits for ll in logits_lists])
-    weights = np.array([ll.score for ll in logits_lists])
-
-    if reduction == 'mean':
-        logits = np.mean(logits, axis=0)
-        logits = softmax(logits, axis=1).tolist()
-    elif reduction == 'wmean':
-        logits = np.average(logits, axis=0, weights=weights)
-        logits = softmax(logits, axis=1).tolist()
-    else:
-        raise ValueError("Reduction strategy '{}' not implemented".format(reduction))
-
-    assert len(logits) == len(original_data)
-
-    for lgs, example in zip(logits, original_data):
-        example.logits = lgs
-        example.label = labels[np.argmax(example.logits).item()]
-
-    test_set = []
-
-    for idx, label in enumerate(labels):
-
-        if n_most_likely <= 0:
-            examples = [ex for ex in original_data if ex.label == label]
-            logger.info("There are {} examples for label {}".format(len(examples), label))
-            while len(examples) < examples_per_label[idx]:
-                # upsample examples if there are too few
-                examples.extend(ex for ex in original_data if ex.label == label)
-        else:
-            examples = [(ex.logits[idx], ex_idx, ex) for ex_idx, ex in enumerate(original_data)]
-            examples.sort(reverse=True)
-            examples = [ex for score, ex_idx, ex in examples[:n_most_likely]]
-            examples = [copy.deepcopy(ex) for ex in examples]
-            for example in examples:
-                example.logits = [example.logits[idx]]
-                example.label = label
-
-        label_examples = _draw_examples_by_label_probability(
-            examples=examples, num_examples=examples_per_label[idx], rng=rng_np)
-        test_set.extend(label_examples)
-
-    return test_set
-
-
-def _draw_examples_by_label_probability(examples: List[InputExample], num_examples: int, rng) -> List[InputExample]:
-    label_probabilities = [max(example.logits) for example in examples]
-    sum_label_probabilities = sum(label_probabilities)
-    label_probabilities = [p / sum_label_probabilities for p in label_probabilities]
-    return rng.choice(examples, size=num_examples, replace=False, p=label_probabilities).tolist()
-
-
-def iterative_run(train_data, dev32_data, eval_data, unlabeled_data, wrapper_config, train_eval_config):
-    output_dir = wrapper_config.output_dir
     for gen in range(train_eval_config.generations):
         gen_output_dir = os.path.join(output_dir, f'g{gen}')
-        aug_data_dir = os.path.join(output_dir, f'g{gen - 1}','next-gen-train-data') if gen > 0 else None
-        run(train_data, dev32_data, eval_data, wrapper_config, train_eval_config,
-            unlabeled_data, gen_output_dir, aug_data_dir)
+        if gen>0:
+            ipet_data_dirs={}
+            if unlabeled_data is not None:
+                ipet_data_dirs['unlabeled']=os.path.join(output_dir, f'g{gen - 1}','next-gen-train-data')
+            if aug_data is not None and train_eval_config.relabel_aug_data==True:
+                ipet_data_dirs['aug']=os.path.join(output_dir, f'g{gen - 1}','next-gen-train-data')
+        else:
+            ipet_data_dirs=None
+        if wrapper_config.arch_method=='noisy_student':
+            train_eval_config.use_dropout=True if gen>0 else False
+        # ipet_data_dirs = os.path.join(output_dir, f'g{gen - 1}','next-gen-train-data') if gen > 0 else None
+        results=run(train_datas, dev32_datas, eval_data, wrapper_config, train_eval_config, gen_output_dir, unlabeled_data, aug_data, ipet_data_dirs, save_unlabeled_logits=True)
 
-        original_data_size = len(train_data) if train_data else 10 / train_eval_config.scale_factor
-        num_new_examples = int(original_data_size * (train_eval_config.scale_factor ** (gen + 1)) - len(train_data))
-        generate_ipet_train_sets(train_data=train_data,
-                                 unlabeled_data=unlabeled_data,
-                                 labels=wrapper_config.label_list,
-                                 logits_dir=gen_output_dir,
-                                 output_dir=os.path.join(gen_output_dir, 'next-gen-train-data'),
-                                 reduction="mean",
-                                 num_new_examples=num_new_examples,
-                                 logits_percentage=train_eval_config.logits_percentage,
-                                 n_most_likely=train_eval_config.n_most_likely if gen == 0 else -1,
-                                 seed=train_eval_config.seed)
+        if wrapper_config.arch_method in ['ipet', 'noisy_student']:
+            assert (unlabeled_data is not None) or (aug_data is not None)
+            logger.info("Augmenting data by self-labeling unlabeled data.")
+            original_data_size = len(train_datas[0]) if train_datas else 10 / train_eval_config.ipet_scale_factor
+            num_new_examples = int(original_data_size * (train_eval_config.ipet_scale_factor ** (gen + 1)) - len(train_datas[0]))
+            if unlabeled_data is not None:
+                generate_ipet_train_sets(train_datas=train_datas,
+                                        unlabeled_data=unlabeled_data,
+                                        labels=wrapper_config.label_list,
+                                        logits_dir=gen_output_dir,
+                                        output_dir=os.path.join(gen_output_dir, 'next-gen-train-data'),
+                                        reduction="mean",
+                                        num_new_examples=num_new_examples,
+                                        logits_percentage=train_eval_config.ipet_logits_percentage,
+                                        n_most_likely=train_eval_config.ipet_n_most_likely if gen == 0 else -1,
+                                        seed=train_eval_config.seed,
+                                        logits_prefix='unlabeled',
+                                        use_brother_fold_logits=train_eval_config.use_brother_fold_logits)
+            if aug_data is not None and train_eval_config.relabel_aug_data==True:
+                generate_ipet_train_sets(train_datas=train_datas,
+                                     unlabeled_data=aug_data,
+                                     labels=wrapper_config.label_list,
+                                     logits_dir=gen_output_dir,
+                                     output_dir=os.path.join(gen_output_dir, 'next-gen-train-data'),
+                                     reduction="mean",
+                                     num_new_examples=num_new_examples,
+                                     logits_percentage=train_eval_config.ipet_logits_percentage,
+                                     n_most_likely=train_eval_config.ipet_n_most_likely if gen == 0 else -1,
+                                     seed=train_eval_config.seed,
+                                     logits_prefix='aug',
+                                     use_brother_fold_logits=train_eval_config.use_brother_fold_logits)
+        elif wrapper_config.method == "flipda":
+            raise NotImplementedError("FlipDA to be implemented.")
+    return results
 
 
+def run(train_datas, dev32_datas, eval_data, wrapper_config, train_eval_config, output_dir=None, unlabeled_data=None, aug_data=None, ipet_data_dirs=None, save_unlabeled_logits=False):
 
-def run(train_data, dev32_data, eval_data, wrapper_config, train_eval_config,
-        unlabeled_data=None, output_dir=None, aug_data_dir=None):
-
-    seed = train_eval_config.seed
     pattern_ids = train_eval_config.pattern_ids
     repetitions = train_eval_config.repetitions
+    folds = train_eval_config.cv_k
+    seed = train_eval_config.seed
     do_train = train_eval_config.do_train
     do_eval = train_eval_config.do_eval
+    if output_dir is None:
+        output_dir = wrapper_config.output_dir
 
-    output_dir = output_dir if output_dir is not None else wrapper_config.output_dir
     results = defaultdict(lambda: defaultdict(list))
+    dev32_results = defaultdict(lambda: defaultdict(list))
 
+    set_seed(seed)
+    assert len(train_eval_config.sampler_seeds) >= repetitions
     for pattern_id in pattern_ids:
-        for iteration in range(repetitions):
-            set_seed(seed)
+        for fold in range(folds):
+            train_data=train_datas[fold];dev32_data=dev32_datas[fold]
+            for iteration in range(repetitions):
+                results_dict = {}
+                pattern_iter_output_dir = "{}/p{}/f{}-i{}".format(output_dir, pattern_id, fold, iteration)
+                train_eval_config.sampler_seed = train_eval_config.sampler_seeds[iteration]
 
-            results_dict = {}
-            pattern_iter_output_dir = "{}/p{}-i{}".format(output_dir, pattern_id, iteration)
-            if os.path.exists(pattern_iter_output_dir):
-                logger.warning(f"Path {pattern_iter_output_dir} already exists, skipping it...")
-                continue
-            else:
-                os.makedirs(pattern_iter_output_dir)
-
-            wrapper = TransformerModelWrapper(wrapper_config, pattern_id)
-
-            if do_train:
-                if aug_data_dir is not None:
-                    p = os.path.join(aug_data_dir, 'p{}-i{}-train.bin'.format(pattern_id, iteration))
-                    ipet_train_data = InputExample.load_examples(p)
-                    for example in ipet_train_data:
-                        example.logits = None
+                if os.path.exists(pattern_iter_output_dir):
+                    logger.warning(f"Path {pattern_iter_output_dir} already exists, skipping it...")
+                    continue
                 else:
-                    ipet_train_data = None
+                    os.makedirs(pattern_iter_output_dir)
+                wrapper = TransformerModelWrapper(wrapper_config, pattern_id)
+                if do_train:
+                    ipet_train_data=None
+                    if ipet_data_dirs is not None:
+                        for (prefix,ipet_data_dir) in ipet_data_dirs.items():
+                            p = os.path.join(ipet_data_dir, 'p{}-f{}-i{}-{}-train.bin'.format(pattern_id, fold, iteration, prefix))
+                            tmp_ipet_train_data = InputExample.load_examples(p)
+                            for example in tmp_ipet_train_data:
+                                example.logits = None
+                            if ipet_train_data is None:
+                                ipet_train_data=tmp_ipet_train_data
+                            else:
+                                ipet_train_data+=tmp_ipet_train_data
+                    if aug_data is not None and train_eval_config.relabel_aug_data==False:
+                        ipet_train_data = ipet_train_data + aug_data
 
-                cur_results = wrapper.train(train_data, dev32_data, pattern_iter_output_dir, train_eval_config,
-                                            unlabeled_data=unlabeled_data, ipet_train_data=ipet_train_data)
+                    cur_results = wrapper.train(train_data, dev32_data, pattern_iter_output_dir, train_eval_config,
+                                                unlabeled_data=unlabeled_data, ipet_train_data=ipet_train_data)
+                    results_dict.update(cur_results)
 
-                # train_single_model(eval_data, dev32_data, pattern_iter_output_dir,
-                #                                       wrapper, train_data, train_config, eval_config,
-                #                                       ipet_train_data=ipet_train_data,
-                #                                       unlabeled_data=unlabeled_data)
+                    with open(os.path.join(pattern_iter_output_dir, 'results.txt'), 'w') as fh:
+                        fh.write(str(results_dict))
 
-                results_dict.update(cur_results)
+                    if train_eval_config.few_shot_setting == "fix_setting":
+                        logger.info("Saving trained model at {} for fix-setting.".format(pattern_iter_output_dir))
+                        wrapper.save(pattern_iter_output_dir)
 
-                with open(os.path.join(pattern_iter_output_dir, 'results.txt'), 'w') as fh:
-                    fh.write(str(results_dict))
+                    train_eval_config.save(os.path.join(pattern_iter_output_dir, TRAIN_EVAL_CONFIG_NAME))
+                    logger.info("Saving complete")
 
-                train_eval_config.save(os.path.join(pattern_iter_output_dir, 'train_eval_config.json'))
-                # eval_config.save(os.path.join(pattern_iter_output_dir, 'eval_config.json'))
-                logger.info("Saving complete")
+                    if save_unlabeled_logits:
+                        if unlabeled_data is not None:
+                            unlabeled_logits = wrapper.evaluate(unlabeled_data,
+                                train_eval_config.per_gpu_eval_batch_size,
+                                train_eval_config.n_gpu,
+                                train_eval_config.device,
+                                train_eval_config.metrics,
+                                train_eval_config.decoding_strategy,
+                                train_eval_config.eval_priming,
+                                train_eval_config.priming_num, priming_data=train_data)['logits']
+                            save_logits(os.path.join(pattern_iter_output_dir, 'unlabeled_logits.txt'), unlabeled_logits)
+                            logger.info("unlabeled logits saved.")
 
-                if wrapper_config.method in ["ipet", 'noisy_student']:
-                    logits = wrapper.evaluate(unlabeled_data,
+                        if aug_data is not None and train_eval_config.relabel_aug_data==True:
+                            aug_logits = wrapper.evaluate(aug_data,
+                                train_eval_config.per_gpu_eval_batch_size,
+                                train_eval_config.n_gpu,
+                                train_eval_config.device,
+                                train_eval_config.metrics,
+                                train_eval_config.decoding_strategy,
+                                train_eval_config.eval_priming,
+                                train_eval_config.priming_num, priming_data=train_data)['logits']
+                            save_logits(os.path.join(pattern_iter_output_dir, 'aug_logits.txt'), aug_logits)
+                            logger.info("augmented logits saved.")
+
+                    wrapper.model.cpu()
+                    wrapper.model = None
+                    wrapper = None
+                    torch.cuda.empty_cache()
+
+                if do_eval:
+                    logger.info("Starting evaluation...")
+                    logger.info("restoring checkpoint from {}".format(pattern_iter_output_dir))
+                    wrapper = TransformerModelWrapper.from_pretrained(pattern_iter_output_dir)
+
+                    eval_result = wrapper.evaluate(
+                        eval_data,
                         train_eval_config.per_gpu_eval_batch_size,
                         train_eval_config.n_gpu,
                         train_eval_config.device,
                         train_eval_config.metrics,
                         train_eval_config.decoding_strategy,
                         train_eval_config.eval_priming,
-                        train_eval_config.priming_num, priming_data=train_data)['logits']
-                    save_logits(os.path.join(pattern_iter_output_dir, 'logits.txt'), logits)
-                    logger.info("logits saved.")
+                        train_eval_config.priming_num, priming_data=train_data)
 
+                    dev32_eval_result = wrapper.evaluate(dev32_data,
+                        train_eval_config.per_gpu_eval_batch_size,
+                        train_eval_config.n_gpu,
+                        train_eval_config.device,
+                        train_eval_config.metrics,
+                        train_eval_config.decoding_strategy,
+                        train_eval_config.eval_priming,
+                        train_eval_config.priming_num, priming_data=train_data)
 
+                    save_predictions(os.path.join(pattern_iter_output_dir, 'predictions.jsonl'), wrapper, eval_result)
+                    save_logits(os.path.join(pattern_iter_output_dir, 'eval_logits.txt'), eval_result['logits'])
 
-                wrapper.model.cpu()
-                wrapper.model = None
-                wrapper = None
-                torch.cuda.empty_cache()
+                    save_predictions(os.path.join(pattern_iter_output_dir, 'dev32_predictions.jsonl'), wrapper, dev32_eval_result)
+                    save_logits(os.path.join(pattern_iter_output_dir, 'dev32_eval_logits.txt'), dev32_eval_result['logits'])
 
-            if do_eval:
-                logger.info("Starting evaluation...")
-                logger.info("restoring checkpoint from {}".format(pattern_iter_output_dir))
-                wrapper = TransformerModelWrapper.from_pretrained(pattern_iter_output_dir)
+                    scores = eval_result['scores']
+                    logger.info("--- eval_data RESULT (pattern_id={}, iteration={}) ---".format(pattern_id, iteration))
+                    logger.info(scores)
+                    logger.info("--- dev32_data RESULT (pattern_id={}, iteration={}) ---".format(pattern_id, iteration))
+                    logger.info(dev32_eval_result["scores"])
 
-                eval_result = wrapper.evaluate(
-                    eval_data,
-                    train_eval_config.per_gpu_eval_batch_size,
-                    train_eval_config.n_gpu,
-                    train_eval_config.device,
-                    train_eval_config.metrics,
-                    train_eval_config.decoding_strategy,
-                    train_eval_config.eval_priming,
-                    train_eval_config.priming_num, priming_data=train_data)
+                    results_dict['test_set_after_training'] = scores
+                    results_dict["dev32_set_after_training"] = dev32_eval_result["scores"]
 
-                # = evaluate(wrapper, eval_data, eval_config, priming_data=train_data)
-                dev32_eval_result = wrapper.evaluate(dev32_data,
-                    train_eval_config.per_gpu_eval_batch_size,
-                    train_eval_config.n_gpu,
-                    train_eval_config.device,
-                    train_eval_config.metrics,
-                    train_eval_config.decoding_strategy,
-                    train_eval_config.eval_priming,
-                    train_eval_config.priming_num, priming_data=train_data)
+                    with open(os.path.join(pattern_iter_output_dir, 'results.json'), 'w') as fh:
+                        json.dump(results_dict, fh)
 
-                # evaluate(wrapper, dev32_data, eval_config, priming_data=train_data)
-                print(eval_result)
-                save_predictions(os.path.join(pattern_iter_output_dir, 'predictions.jsonl'), wrapper, eval_result)
-                save_logits(os.path.join(pattern_iter_output_dir, 'eval_logits.txt'), eval_result['logits'])
+                    for metric, value in scores.items():
+                        results[metric][pattern_id].append(value)
 
-                save_predictions(os.path.join(pattern_iter_output_dir, 'dev32_predictions.jsonl'), wrapper, dev32_eval_result)
-                save_logits(os.path.join(pattern_iter_output_dir, 'dev32_eval_logits.txt'), dev32_eval_result['logits'])
+                    for metric, value in dev32_eval_result['scores'].items():
+                        dev32_results[metric][pattern_id].append(value)
 
-                scores = eval_result['scores']
-                logger.info("--- eval_data RESULT (pattern_id={}, iteration={}) ---".format(pattern_id, iteration))
-                logger.info(scores)
-                logger.info("--- dev32_data RESULT (pattern_id={}, iteration={}) ---".format(pattern_id, iteration))
-                logger.info(dev32_eval_result["scores"])
-
-                results_dict['test_set_after_training'] = scores
-                results_dict["dev32_set_after_training"] = dev32_eval_result["scores"]
-
-                with open(os.path.join(pattern_iter_output_dir, 'results.json'), 'w') as fh:
-                    json.dump(results_dict, fh)
-
-                for metric, value in scores.items():
-                    results[metric][pattern_id].append(value)
-
-                wrapper.model.cpu()
-                wrapper.model = None
-                wrapper = None
-                torch.cuda.empty_cache()
+                    wrapper.model.cpu()
+                    wrapper.model = None
+                    wrapper = None
+                    torch.cuda.empty_cache()
 
     if do_eval:
         logger.info("=== OVERALL RESULTS ===")
-        _write_results(os.path.join(output_dir, 'result_test.txt'), results)
+        final_results=_write_results(os.path.join(output_dir, 'result_test.txt'), results, dev32_results)
+        return final_results
     else:
         logger.info("=== ENSEMBLE TRAINING COMPLETE ===")
 
 
-
-
-def main():
-
-    start_time = time.time()
-
-    ### get arguments
-    args = get_args()
-
-    """
-    if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train and not \
-            args.overwrite_output_dir:
-        # raise ValueError("Output directory ({}) already exists and is not empty.".format(args.output_dir))
+def process_args(args):
+    if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train and not args.overwrite_output_dir:
+        raise ValueError("Output directory ({}) already exists and is not empty.".format(args.output_dir))
+    if os.path.exists(args.output_dir) and os.listdir(args.output_dir) and args.do_train and args.overwrite_output_dir:
         shutil.rmtree(args.output_dir)
-    """
+        # pass
+
+    if args.method == "sequence_classfier":
+        args.use_cloze=False
+    elif args.method in ["pet", "adapet", "lm_training"]:
+        args.use_cloze=True
+        args.use_continuous_prompt=False
+    elif args.method == "ptuning":
+        args.use_cloze=True
+        args.use_continuous_prompt=True
+
+    if args.arch_method=='default': #TODO
+        args.generations=1
+
+    if args.few_shot_setting in ['fix_setting','dev32_setting']:
+        args.cv_k=1
+
     ### Setup CUDA, GPU & distributed training
     args.device = "cuda" if torch.cuda.is_available() and not args.no_cuda else "cpu"
     args.n_gpu = torch.cuda.device_count()
-
-    ### get label list
     args.task_name = args.task_name.lower()
-    PROCESSORS = DATASETS[args.dataset_name]["processors"]
-    if args.task_name not in PROCESSORS:
+    ### get metrics
+    metrics = DATASETS[args.dataset_name]["metrics"]
+    args.metrics = metrics.get(args.task_name, DEFAULT_METRICS)
+    return args
+
+def main():
+    start_time = time.time()
+    args = get_args()
+    set_seed(args.seed)
+    args = process_args(args)
+    processors = DATASETS[args.dataset_name]["processors"]
+    if args.task_name not in processors:
         raise ValueError("Task '{}' not found".format(args.task_name))
-    processor = PROCESSORS[args.task_name](args.task_name)
+    processor = processors[args.task_name](args.task_name)
     args.label_list = processor.get_labels()
 
-    ### get metrics
-    METRICS = DATASETS[args.dataset_name]["metrics"]
-    args.metrics = METRICS.get(args.task_name, DEFAULT_METRICS)
-
-    ### prepare data
-    train_data, eval_data, dev32_data, unlabeled_data = load_dataset(args)
-
-
+    logger.info("\n")
+    logger.info("Parameters: {}".format(args))
+    logger.info("\n")
 
     ### prepare configurations
+    data_config = get_data_config(args)
     wrapper_config = get_wrapper_config(args)
     train_eval_config = get_train_eval_config(args)
 
-    # non-self-training methods
-    if args.method in ["pet", "sequence_classifier", "ptuning"]:
-        run(train_data, dev32_data, eval_data, wrapper_config, train_eval_config)
-
-    elif args.method in ["adapet", "lm_training"]:
-        run(train_data, dev32_data, eval_data, wrapper_config, train_eval_config, unlabeled_data)
-
-    elif args.method in ["ipet","noisy_student"]:
-        iterative_run(train_data, dev32_data, eval_data, unlabeled_data, wrapper_config, train_eval_config)
-
+    ### prepare data
+    train_data, dev32_data, eval_data, unlabeled_data = load_dataset(data_config)
+    if args.aug_data_dir is not None:
+        aug_data = processor._create_examples(args.aug_data_dir,"aug")
     else:
-        raise NotImplementedError(f"Training method '{args.method}' not implemented.")
+        aug_data = None
 
-    logger.info("\n")
-    logger.info("elapsed time: " + str(time.time() - start_time))
-    logger.info("\n")
+    logger.info('train_data: {}, dev32_data: {}, eval_data: {}'.format(len(train_data),len(dev32_data),len(eval_data)))
 
+    start_time = time.time()
+    # prepare train_data and dev32_data
+    train_datas,dev32_datas=prepare_splited_data(args,train_data,dev32_data)
+    results=iterative_run(train_datas, dev32_datas, eval_data, wrapper_config, train_eval_config, unlabeled_data, aug_data, output_dir=args.output_dir)
+        #     for metric in args.metrics:
+        #         all_results["dev32"][metric]+=results["dev32"][metric]
+        #         all_results["dev"][metric]+=results["dev"][metric]
+        # results={x:{y1:y2/K for (y1,y2) in y.items()} for (x,y) in all_results.items()}
+    end_time=time.time()
+    time_eclapsed = int(end_time-start_time)
+    # hyper_params = args.output_dir.split("/")[-1]
+    template_name=['task_name','few_shot_setting','max_steps','warmup_ratio','gradient_accumulation_steps','per_gpu_train_batch_size','lr','pattern','max_seq_length','every_eval_ratios']
+    template_values=[args.task_name,args.few_shot_setting,args.max_steps,args.warmup_step_ratio,args.gradient_accumulation_steps,args.per_gpu_train_batch_size,args.learning_rate,args.pattern_ids,args.max_seq_length,args.every_eval_ratio]
+    if args.method=='ptuning':
+        template_name.append('embedding_learning_rate')
+        template_values.append(args.embedding_learning_rate)
+    hyper_params=(': {}, '.join(template_name)+': {},').format(*template_values)
+    result_file_name = "factor_" + args.arch_method +"_"+ args.task_name + "_" + args.method + "_" +args.model_type + ".txt"
+    with open(os.path.join("final_results", result_file_name), "a+") as f:
+        if args.task_name in ["boolq", "rte", "wic", "wsc", "copa"]:
+            f.write(hyper_params
+                    + "\t" + str(results["dev32"]['acc'])
+                    + "\t" + str(results["dev"]['acc'])
+                    + "\t"  + str(time_eclapsed) +'\n')
+        elif args.task_name == "cb":
+            f.write(hyper_params
+                    + "\t" + str(results["dev32"]['acc'])
+                    + "\t" + str(results["dev"]['acc'])
+                    + "\t" + str(results["dev32"]['f1-macro'])
+                    + "\t" + str(results["dev"]['f1-macro'])
+                    + "\t"  + str(time_eclapsed) + '\n')
+        elif args.task_name == "multirc":
+            f.write(hyper_params
+                    + "\t" + str(results["dev32"]['acc'])
+                    + "\t" + str(results["dev"]['acc'])
+                    + "\t" + str(results["dev32"]['f1'])
+                    + "\t" + str(results["dev"]['f1'])
+                    + "\t" + str(results["dev32"]['em'])
+                    + "\t" + str(results["dev"]['em'])
+                    + "\t"  + str(time_eclapsed) + '\n')
+    logger.info("\n")
+    logger.info("Time elapsed: " + str(time_eclapsed))
+    logger.info("\n")
 
 if __name__ == "__main__":
     main()

@@ -1,32 +1,26 @@
 from abc import abstractmethod
 
 import torch
-from transformers import InputExample, AdamW, get_linear_schedule_with_warmup, PreTrainedTokenizer, \
-    AlbertForSequenceClassification, AlbertForMaskedLM, AlbertTokenizer, AlbertConfig, \
-    DebertaV2Tokenizer, DebertaV2Config
+import torch.nn as nn
+from transformers import AlbertForSequenceClassification, AlbertForMaskedLM, AlbertTokenizer, AlbertConfig, \
+    DebertaV2Tokenizer, DebertaV2Config, BertConfig, BertTokenizer, BertForSequenceClassification, BertForMaskedLM, \
+    RobertaConfig, RobertaTokenizer, RobertaForSequenceClassification, RobertaForMaskedLM
 
+from modified_hf_models.modeling_deberta_v2 import DebertaV2ForMaskedLM, DebertaV2ForSequenceClassification
 import log
 from data_utils.preprocessor import SEQUENCE_CLASSIFIER_WRAPPER, MLM_WRAPPER
-from modified_hf_models.modeling_deberta_v2 import DebertaV2ForMaskedLM, DebertaV2ForSequenceClassification
+from global_vars import MODEL_CLASSES
 
-logger = log.get_logger('root')
+logger = log.get_logger()
 
-MODEL_CLASSES = {
-    'albert': {
-        'config': AlbertConfig,
-        'tokenizer': AlbertTokenizer,
-        SEQUENCE_CLASSIFIER_WRAPPER: AlbertForSequenceClassification,
-        MLM_WRAPPER: AlbertForMaskedLM,
-    },
-    'deberta': {
-        'config': DebertaV2Config,
-        'tokenizer': DebertaV2Tokenizer,
-        MLM_WRAPPER: DebertaV2ForMaskedLM,
-        SEQUENCE_CLASSIFIER_WRAPPER: DebertaV2ForSequenceClassification
-    },
-}
-
-
+class DropoutWords(nn.Dropout2d): #Spatial Dropout
+    def forward(self,x):
+        x=x.unsqueeze(2)
+        x=x.permute(0,3,2,1)
+        x=super(DropoutWords,self).forward(x)
+        x=x.permute(0,3,2,1)
+        x=x.squeeze(2)
+        return x
 
 class BaseModel(torch.nn.Module):
     def __init__(self, config, tokenizer, wrapper_type):
@@ -42,18 +36,19 @@ class BaseModel(torch.nn.Module):
         model_class = MODEL_CLASSES[self.config.model_type][wrapper_type]
         self.model = model_class.from_pretrained(config.model_name_or_path, config=model_config,
                                                  cache_dir=config.cache_dir if config.cache_dir else None)
+        logger.info(" Base pretrained model Loaded.")
 
         if "deberta" in self.config.model_name_or_path and self.config.fix_deberta:
-            logger.info("fix_layers()")
+            logger.info(" DeBERTa model with fix_layers.")
             self.model.fix_layers()
 
     def forward(self, input_ids=None, attention_mask=None, token_type_ids=None, labels=None,
-                input_embeds=None, is_training=True, **kwargs):
+                inputs_embeds=None, is_training=True, **kwargs):
         return self.model(input_ids=input_ids,
                           attention_mask=attention_mask,
                           token_type_ids=token_type_ids,
                           labels=labels,
-                          input_embeds=input_embeds,
+                          inputs_embeds=inputs_embeds,
                           **kwargs)
 
     @abstractmethod

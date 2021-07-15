@@ -5,9 +5,9 @@ logger = log.get_logger('root')
 
 class SequenceClassifierModel(BaseModel):
 
-    def __init__(self, config, tokenizer):
+    def __init__(self, config, tokenizer, pvp=None):
         super(SequenceClassifierModel, self).__init__(config, tokenizer, "cls")
-
+        assert config.use_cloze == False
 
     def train_step(self, batch, **_):
         inputs = self.generate_default_inputs(batch)

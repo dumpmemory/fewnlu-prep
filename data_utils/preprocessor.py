@@ -14,124 +14,87 @@ from abc import ABC, abstractmethod
 from typing import List
 
 import numpy as np
+from transformers import PreTrainedTokenizer
 
-from methods.utils import InputFeatures, InputExample, PLMInputFeatures, get_verbalization_ids
-# from data_utils.pvp import PVP, PVPS
 from tasks.dataloader import DATASETS
+from utils import InputFeatures, InputExample, PLMInputFeatures
+from global_vars import SEQUENCE_CLASSIFIER_WRAPPER, MLM_WRAPPER, PLM_WRAPPER
 
-PVPS = DATASETS["superglue"]["pvps"]
 
 class Preprocessor(ABC):
     """
     A preprocessor that transforms an :class:`InputExample` into a :class:`InputFeatures` object so that it can be
     processed by the model being used.
     """
+    def __init__(self, tokenizer: PreTrainedTokenizer, dataset_name:str, task_name: str, pattern_id: int,
+                 use_cloze:bool, use_continuous_prompt:bool, max_seq_len:int, label_list: List, seed:int):
+        self.tokenizer = tokenizer
+        self.dataset_name = dataset_name
+        self.task_name = task_name
+        self.pattern_id = pattern_id
+        self.use_cloze = use_cloze
+        self.use_continuous_prompt = use_continuous_prompt
+        self.max_seq_len = max_seq_len
+        self.label_list = label_list
+        self.seed = seed
 
-    def __init__(self, wrapper, task_name, pattern_id: int = 0, verbalizer_file: str = None, use_continuous_prompt:bool=False):
-        """
-        Create a new preprocessor.
+        PVPS = DATASETS[self.dataset_name]["pvps"]
+        self.pvp = PVPS[self.task_name](self.tokenizer, self.max_seq_len, self.label_list, self.use_cloze,
+                                        self.use_continuous_prompt, self.pattern_id, self.seed)
 
-        :param wrapper: the wrapper for the language model to use
-        :param task_name: the name of the data_utils
-        :param pattern_id: the id of the PVP to be used
-        :param verbalizer_file: path to a file containing a verbalizer that overrides the default verbalizer
-        """
-        self.wrapper = wrapper
-        # self.pvp = PVPS[task_name](wrapper=self.wrapper, pattern_id=pattern_id, verbalizer_file=verbalizer_file, use_continuous_prompt=use_continuous_prompt)  # type: PVP
-
-        self.pvp = PVPS[task_name](wrapper.tokenizer, pattern_id,
-                                   self.wrapper.config.use_cloze, use_continuous_prompt, 42, self.wrapper.config.max_seq_length,
-                                   self.wrapper.config.label_list, verbalizer_file=verbalizer_file)
-        self.label_map = {label: i for i, label in enumerate(self.wrapper.config.label_list)}
-
-
+        self.label_map = {label: idx for idx, label in enumerate(self.label_list)}
 
     @abstractmethod
-    def get_input_features(self, example: InputExample, labelled: bool, priming: bool = False,
-                           **kwargs) -> InputFeatures:
+    def get_input_features(self, example:InputExample, labelled: bool, priming: bool, **kwargs) -> InputFeatures:
         """Convert the given example into a set of input features"""
         pass
 
 
 class MLMPreprocessor(Preprocessor):
     """Preprocessor for models pretrained using a masked language modeling objective (e.g., BERT)."""
-
-    def get_input_features(self, example: InputExample, labelled: bool, priming: bool = False,
-                           **kwargs) -> InputFeatures:
-
-        if priming:
-            pattern_example= self.pvp.encode(example, priming=True)
-            input_ids = pattern_example.input_ids
-            token_type_ids = pattern_example.token_type_ids
-            block_flags = pattern_example.block_flags
-
-            priming_data = example.meta['priming_data']  # type: List[InputExample]
-
-            priming_input_ids = []
-            priming_block_flags = []
-            for priming_example in priming_data:
-
-                ex = self.pvp.encode(priming_example, priming=True, labeled=True)
-                pe_input_ids = ex.input_ids
-                pe_block_flags = ex.block_flags
-                # TODO
-                priming_input_ids += (pe_input_ids + [3])
-                priming_block_flags += (pe_block_flags + [0])
-
-            input_ids = priming_input_ids + input_ids
-            block_flags = priming_block_flags + block_flags
-
-            token_type_ids = self.wrapper.tokenizer.create_token_type_ids_from_sequences(input_ids)
-            input_ids = self.wrapper.tokenizer.build_inputs_with_special_tokens(input_ids)
-            block_flags = self.wrapper.tokenizer.build_inputs_with_special_tokens(block_flags)
-
-        else:
-            pattern_example = self.pvp.encode(example)
-            input_ids = pattern_example.input_ids
-            token_type_ids = pattern_example.token_type_ids
-            block_flags = pattern_example.block_flags
-
+    def get_input_features(self, example:InputExample, labelled: bool, priming: bool, **kwargs) -> InputFeatures:
+        pattern_example = self.pvp.encode(example, priming=priming)
+        input_ids = pattern_example.input_ids
+        token_type_ids = pattern_example.token_type_ids
+        block_flags = pattern_example.block_flags
         attention_mask = [1] * len(input_ids)
-        padding_length = self.wrapper.config.max_seq_length - len(input_ids)
 
+        padding_length = self.max_seq_len - len(input_ids)
         if padding_length < 0:
             raise ValueError(f"Maximum sequence length is too small, got {len(input_ids)} input ids")
 
-        input_ids = input_ids + ([self.wrapper.tokenizer.pad_token_id] * padding_length)
+        input_ids = input_ids + ([self.tokenizer.pad_token_id] * padding_length)
         attention_mask = attention_mask + ([0] * padding_length)
         token_type_ids = token_type_ids + ([0] * padding_length)
         block_flags = block_flags + ([0] * padding_length)
 
-        assert len(input_ids) == self.wrapper.config.max_seq_length
-        assert len(attention_mask) == self.wrapper.config.max_seq_length
-        assert len(token_type_ids) == self.wrapper.config.max_seq_length
-        assert len(block_flags) == self.wrapper.config.max_seq_length
+        assert len(input_ids) == self.max_seq_len
+        assert len(attention_mask) == self.max_seq_len
+        assert len(token_type_ids) == self.max_seq_len
+        assert len(block_flags) == self.max_seq_len
 
-        label = self.label_map[example.label] if example.label is not None else -100
+        label_id = self.label_map[example.label] if example.label is not None else -100
         logits = example.logits if example.logits else [-1]
 
         if labelled:
-            # get start mask token position
             mlm_labels = self.pvp.get_mask_positions(input_ids)
-
             """
             if self.wrapper.config.model_type == 'gpt2':
                 # shift labels to the left by one
                 mlm_labels.append(mlm_labels.pop(0))
             """
-
         else:
-            mlm_labels = [-1] * self.wrapper.config.max_seq_length
+            mlm_labels = [-1] * self.max_seq_len
 
         return InputFeatures(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids,
-                             label=label, mlm_labels=mlm_labels, logits=logits, idx=example.idx, block_flags=block_flags)
+                             label=label_id, mlm_labels=mlm_labels, logits=logits, idx=example.idx,
+                             block_flags=block_flags)
 
 
 class PLMPreprocessor(MLMPreprocessor):
     """Preprocessor for models pretrained using a permuted language modeling objective (e.g., XLNet)."""
 
-    def get_input_features(self, example: InputExample, labelled: bool, priming: bool = False, **kwargs) -> PLMInputFeatures:
-
+    def get_input_features(self, example: InputExample, labelled: bool, priming: bool, **kwargs) -> PLMInputFeatures:
         input_features = super().get_input_features(example, labelled, priming, **kwargs)
         input_ids = input_features.input_ids
 
@@ -149,39 +112,25 @@ class PLMPreprocessor(MLMPreprocessor):
 
 class SequenceClassifierPreprocessor(Preprocessor):
     """Preprocessor for a regular sequence classification model."""
-
     def get_input_features(self, example: InputExample, **kwargs) -> InputFeatures:
-        inputs = self.wrapper.task_helper.get_sequence_classifier_inputs(example) if self.wrapper.task_helper else None
-        if inputs is None:
-            inputs = self.wrapper.tokenizer.encode_plus(
-                example.text_a if example.text_a else None,
-                example.text_b if example.text_b else None,
-                add_special_tokens=True,
-                max_length=self.wrapper.config.max_seq_length,
-                truncation=True
-            )
-
-        input_ids, token_type_ids = inputs["input_ids"], inputs.get("token_type_ids")
-
+        pattern_example = self.pvp.encode(example, priming=False)
+        input_ids = pattern_example.input_ids
+        token_type_ids = pattern_example.token_type_ids
         attention_mask = [1] * len(input_ids)
-        padding_length = self.wrapper.config.max_seq_length - len(input_ids)
 
-        input_ids = input_ids + ([self.wrapper.tokenizer.pad_token_id] * padding_length)
+        padding_length = self.max_seq_len - len(input_ids)
+        input_ids = input_ids + ([self.tokenizer.pad_token_id] * padding_length)
         attention_mask = attention_mask + ([0] * padding_length)
-
-        if not token_type_ids:
-            token_type_ids = [0] * self.wrapper.config.max_seq_length
-        else:
-            token_type_ids = token_type_ids + ([0] * padding_length)
+        token_type_ids = token_type_ids + ([0] * padding_length)
 
         mlm_labels = [-1] * len(input_ids)
         block_flags = [0] * len(input_ids)
 
-        assert len(input_ids) == self.wrapper.config.max_seq_length
-        assert len(attention_mask) == self.wrapper.config.max_seq_length
-        assert len(token_type_ids) == self.wrapper.config.max_seq_length
-        assert len(mlm_labels) == self.wrapper.config.max_seq_length
-        assert len(block_flags) == self.wrapper.config.max_seq_length
+        assert len(input_ids) == self.max_seq_len
+        assert len(attention_mask) == self.max_seq_len
+        assert len(token_type_ids) == self.max_seq_len
+        assert len(mlm_labels) == self.max_seq_len
+        assert len(block_flags) == self.max_seq_len
 
         label = self.label_map[example.label] if example.label is not None else -100
         logits = example.logits if example.logits else [-1]
@@ -193,11 +142,6 @@ class SequenceClassifierPreprocessor(Preprocessor):
                              mlm_labels=mlm_labels, logits=logits, idx=example.idx, block_flags=block_flags)
 
 
-
-SEQUENCE_CLASSIFIER_WRAPPER = "cls"
-MLM_WRAPPER = "mlm"
-PLM_WRAPPER = "plm"
-WRAPPER_TYPES = [SEQUENCE_CLASSIFIER_WRAPPER, MLM_WRAPPER, PLM_WRAPPER]
 
 PREPROCESSORS = {
     SEQUENCE_CLASSIFIER_WRAPPER: SequenceClassifierPreprocessor,

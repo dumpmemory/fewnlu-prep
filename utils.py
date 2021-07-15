@@ -73,7 +73,6 @@ class LogitsList:
                     logits.append([float(x) for x in line.split()])
         return LogitsList(score=score, logits=logits)
 
-
 class InputExample(object):
     """A raw input example consisting of one or two segments of text and a label"""
 
@@ -120,7 +119,6 @@ class InputExample(object):
         """Save a set of input examples to a file"""
         with open(path, 'wb') as fh:
             pickle.dump(examples, fh)
-
 
 class InputFeatures(object):
     """A set of numeric features obtained from an :class:`InputExample`"""
@@ -179,7 +177,6 @@ class InputFeatures(object):
         """Serialize this instance to a JSON string."""
         return json.dumps(self.to_dict(), indent=2, sort_keys=True) + "\n"
 
-
 class PLMInputFeatures(InputFeatures):
     """A set of numeric input features for a model pretrained with a permuted language modeling objective."""
 
@@ -210,14 +207,6 @@ class DictDataset(Dataset):
         return next(iter(self.tensors.values())).size(0)
 
 
-"""
-def set_seed(seed: int):
-    random.seed(seed)
-    np.random.seed(seed)
-    torch.manual_seed(seed)
-    if torch.cuda.is_available():
-        torch.cuda.manual_seed_all(seed)
-"""
 def set_seed(seed):
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
@@ -262,6 +251,7 @@ def save_predictions(path: str, wrapper, results: Dict):
     """Save a sequence of predictions to a file"""
     predictions_with_idx = []
 
+    """
     if wrapper.task_helper and wrapper.task_helper.output:
         predictions_with_idx = wrapper.task_helper.output
     else:
@@ -270,6 +260,13 @@ def save_predictions(path: str, wrapper, results: Dict):
             prediction = inv_label_map[prediction_idx]
             idx = idx.tolist() if isinstance(idx, np.ndarray) else int(idx)
             predictions_with_idx.append({'idx': idx, 'label': prediction})
+    """
+
+    inv_label_map = {idx: label for label, idx in wrapper.preprocessor.label_map.items()}
+    for idx, prediction_idx in zip(results['indices'], results['predictions']):
+        prediction = inv_label_map[prediction_idx]
+        idx = idx.tolist() if isinstance(idx, np.ndarray) else int(idx)
+        predictions_with_idx.append({'idx': idx, 'label': prediction})
 
     with open(path, 'w', encoding='utf8') as fh:
         for line in predictions_with_idx:

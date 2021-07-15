@@ -1,24 +1,25 @@
 import argparse
 
-import log
-from methods.wrapper import METHOD_CLASSES
-from tasks.superglue.processor import SUPERGLUE_PROCESSORS
-from methods.base_model import MODEL_CLASSES
-
-PROCESSORS = SUPERGLUE_PROCESSORS
-logger = log.get_logger('root')
+from global_vars import MODEL_CLASSES
+from methods.method_vars import METHOD_CLASSES,ARCH_METHOD_CLASSES
 
 
 def add_few_shot_setting_args(parser):
     group = parser.add_argument_group("few-shot setting")
-    group.add_argument('--every_eval_step', type=int, default=5, help="Eval dev32 every X updates steps.")
+    # group.add_argument('--every_eval_step', type=int, default=5, help="Eval dev32 every X updates steps.")
+    group.add_argument('--every_eval_ratio',type=float,default=0.02)
     group.add_argument('--early_stop_epoch', type=int, default=6, help="Maximum early stop epoch.")
+    group.add_argument('--few_shot_setting', type=str, default='dev32_setting', choices=['fix_setting', "dev32_setting", "cross_validation", "mdl", "dev32_split"],
+                       help="Which few-shot setting to use.")
+    group.add_argument('--cv_k',type=int,default=4)
     return parser
 
 
 def add_required_args(parser):
     parser.add_argument("--method", type=str, required=True, choices=METHOD_CLASSES.keys(),
-                        help="The training method to use. Either regular sequence classification, PET or iPET.")
+                        help="The training method to use. Either regular sequence classification, PET, pTuning, or AdaPET")
+    parser.add_argument("--arch_method", type=str, required=True, choices=ARCH_METHOD_CLASSES,
+                        help="The training architecture to use. Either ipet or noisy_student")
     parser.add_argument("--data_dir", default=None, type=str, required=True,
                         help="The input data dir. Should contain the data files for the data_utils.")
     parser.add_argument("--model_type", default=None, type=str, required=True, choices=MODEL_CLASSES.keys(),
@@ -65,8 +66,7 @@ def add_training_args(parser):
                         help="Whether to perform training")
     parser.add_argument('--do_eval', action='store_true',
                         help="Whether to perform evaluation")
-    parser.add_argument('--sampler_seed', type=int, default=42,
-                        help="random seed for RandomSampler, which affects sample order.")
+    parser.add_argument('--sampler_seeds', type=int, default=[10, 20, 30], nargs='+', help='Control train sample order.')
     parser.add_argument('--seed', type=int, default=42, help="random seed for initialization")
     parser.add_argument("--use_cloze", action='store_true')
 
@@ -105,13 +105,22 @@ def add_data_args(parser):
                              "than this will be truncated, sequences shorter will be padded.")
     parser.add_argument("--eval_set", choices=['dev', 'test'], default='dev',
                         help="Whether to perform evaluation on the dev set or the test set")
+    parser.add_argument("--aug_data_dir",default=None,type=str, help="The augmented data address")
+    parser.add_argument("--relabel_aug_data",action="store_true",
+                        help="Whether the labels of augmented data should be tagged by the model")
+
     return parser
 
 
 
+def add_adapet_args(parser): #TODO
+    parser.add_argument("--adapet_mask_alpha",default=0.105,type=float,
+                        help="mask alpha")
+    parser.add_argument("--max_num_lbl_tok",default=20,type=int)
+    return parser 
 
 def get_args():
-    parser = argparse.ArgumentParser(description="Command line interface for FewNLU.")
+    parser = argparse.ArgumentParser(description="Command line interface for fewnlu.")
     # Required parameters
     parser = add_required_args(parser)
     # Training parameters
@@ -120,6 +129,8 @@ def get_args():
     parser = add_data_args(parser)
     # Few-shot setting parameters
     parser = add_few_shot_setting_args(parser)
+    # Adapet setting parameters
+    parser = add_adapet_args(parser) #TODO
 
     # others: for priming
     parser.add_argument('--eval_priming', action='store_true', help="Whether to use priming for evaluation")
@@ -131,9 +142,8 @@ def get_args():
     parser.add_argument("--use_continuous_prompt", action='store_true', help="If set to true, use P-tuning.")
     parser.add_argument("--prompt_encoder_head_type", type=str, default="raw")
 
-
     # others: for ipet
-    parser.add_argument("--ipet_generations", default=3, type=int, help="The number of generations to train (only for iPET)")
+    parser.add_argument("--generations", default=3, type=int, help="The number of generations to train (only for iPET)")
     parser.add_argument("--ipet_logits_percentage", default=0.25, type=float, help="The percentage of models to "
                                                                                    "choose for annotating new training sets (only for iPET)")
     parser.add_argument("--ipet_scale_factor", default=5, type=float, help="The factor by which to increase the "
@@ -142,12 +152,15 @@ def get_args():
                                                                            "n_most_likely examples per label are "
                                                                            "chosen even if their predicted label is "
                                                                            "different (only for iPET)")
+    parser.add_argument("--use_brother_fold_logits",action="store_true")
 
     # others: for deberta
     parser.add_argument("--fix_deberta", action='store_true', help="If set to true, fix 1/3 parameters.")
 
     # others: noisy student dropout
-    parser.add_argument("--dropout_rate", type=float, default=0.1)
+    parser.add_argument("--use_dropout",action="store_true")
+    parser.add_argument("--dropout_rate", type=float, default=0.05)
+
     """
     parser.add_argument('--logging_steps', type=int, default=50, help="Log every X updates steps.")
     # todo: distillation or not
@@ -168,5 +181,4 @@ def get_args():
     """
 
     args = parser.parse_args()
-    logger.info("Parameters: {}".format(args))
     return args

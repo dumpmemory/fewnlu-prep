@@ -11,6 +11,7 @@ class LMTrainingModel(BaseModel):
         self.config = config
         self.tokenizer = tokenizer
         self.pvp = pvp
+        assert config.use_cloze == True and config.use_continuous_prompt == False
 
     def train_step(self, batch, extra_batch, alpha, **_):
 

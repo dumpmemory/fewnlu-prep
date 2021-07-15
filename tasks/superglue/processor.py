@@ -21,11 +21,11 @@ from collections import Counter
 from typing import List, Dict, Callable
 
 import log
-from methods.utils import InputExample
-from tasks.base_processor import DataProcessor, AUGMENTED_SET, TRAIN_SET, DEV32_SET, DEV_SET, TEST_SET, UNLABELED_SET
+from utils import InputExample
+from global_vars import AUGMENTED_SET, TRAIN_SET, DEV32_SET, DEV_SET, TEST_SET, UNLABELED_SET
+from tasks.base_processor import DataProcessor
 
-logger = log.get_logger('root')
-
+logger = log.get_logger()
 
 class SuperGLUEDataProcessor(DataProcessor):
     """
@@ -233,7 +233,7 @@ class CopaProcessor(SuperGLUEDataProcessor):
                     'choice2': example_json['choice2'],
                     'question': example_json['question']
                 }
-                example = InputExample(guid=guid, text_a=text_a, label=label, meta=meta, idx=idx)
+                example = InputExample(guid=guid+'-o', text_a=text_a, label=label, meta=meta, idx=idx)
                 examples.append(example)
 
         if set_type == TRAIN_SET or set_type == UNLABELED_SET or set_type == DEV32_SET:
