@@ -164,170 +164,223 @@
 									<h2>Leaderboard</h2>
 								</header>
 								<p align="left">
-									<font size="3" color="red">
-										<i> Report your results:
+									<font size="3">
+									<strong><font size="4" color="red">Report your results:</font></strong>
 										If you have new results experimented with FewNLU, please send emails to
 										<a href = "mailto:zyanan93@gmail.com">zyanan93@gmail.com</a> or
-										<a href = "mailto:zhouj18@mails.tsinghua.edu.cn">zhouj18@mails.tsinghua.edu.cn</a>
-										attached with the link to your paper or reproducible source codes! Thank you!
-										</i>
+										<a href = "mailto:zhouj18@mails.tsinghua.edu.cn">zhouj18@mails.tsinghua.edu
+											.cn</a>.
+										The goal of this leaderboard is to collect
+											research works under the evaluation framework and to measure the true
+										progress of the field.
+										So It is encouraged that you <strong><font color="red">attach a link to the
+										reproducible
+										source codes</font></strong>. Thank you!
+
 									</font>
 								</p>
 									<table>
 										<tbody>
 										<tr>
+											<th></th>
 											<th> <strong> Methods </strong> </th>
 											<th> <strong> URL </strong> </th>
-											<th> <strong> BoolQ(Acc) </strong> </th>
-											<th> <strong> RTE(Acc) </strong> </th>
-											<th> <strong> WiC(Acc) </strong> </th>
-											<th> <strong> CB(Acc/F1) </strong> </th>
-											<th> <strong> MultiRC(F1a/EM)</strong> </th>
-											<th> <strong> WSC(Acc)</strong> </th>
-											<th> <strong> COPA(Acc)</strong> </th>
+											<th> <strong> Base Model </strong> </th>
+											<th> <strong> BoolQ</br>(Acc) </strong> </th>
+											<th> <strong> RTE</br>(Acc) </strong> </th>
+											<th> <strong> WiC</br>(Acc) </strong> </th>
+											<th> <strong> CB</br>(Acc/F1) </strong> </th>
+											<th> <strong> MultiRC</br>(F1a/EM)</strong> </th>
+											<th> <strong> WSC</br>(Acc)</strong> </th>
+											<th> <strong> COPA</br>(Acc)</strong> </th>
 											<th> <strong> Avg. </strong> </th>
 										</tr>
 
 										<tr>
-											<th>&#127775; Combination<sup>1234</sup> </th>
-											<th> <a href="https://github.com/THUDM/FewNLU/">(code)</a> </th>
-											<th> 84.00 </th>
-											<th> 83.70 </th>
-											<th> 69.60 </th>
-											<th> 94.60/92.90 </th>
-											<th> 81.00/46.00 </th>
-											<th> 88.20 </th>
-											<th> 93.80 </th>
+											<th><sub>&#127775;</sub></th>
+											<th>Combined<sup>12</sup> </th>
+											<th><font size="3">
+												<a href="https://github.com/THUDM/FewNLU/">(code)</a></br>
+												<a href="https://github.com/THUDM/FewNLU/">(desc)</a>
+											</font></th>
+											<th> <font size="3">DeBERTa</br>(xxlarge) </font></th>
+											<th> 84.00 </br><font size="3">±0.55<font></th>
+											<th> 83.70 </br><font size="3">±0.62<font></th>
+											<th> 69.60 </br><font size="3">±2.15<font></th>
+											<th> 94.60/92.90 </br><font size="3">±1.46/±1.85<font></th>
+											<th> 81.00/46.00 </br><font size="3">±0.66/±0.84<font></th>
+											<th> 88.20 </br><font size="3">±1.44<font></th>
+											<th> 93.80 </br><font size="3">±2.99<font></th>
 											<th> 84.99 </th>
 										</tr>
-
-
 										<tr>
-											<th> CLS<sup>1</sup> </th>
-											<th> <a href="https://github.com/THUDM/FewNLU/">(code)</a> </th>
-											<th> 59.49 </th>
-											<th> 49.55 </th>
-											<th> 54.08 </th>
-											<th> 68.30/60.10 </th>
-											<th> 75.42/34.23 </th>
-											<th> 60.82 </th>
-											<th> 85.25 </th>
-											<th> 61.17 </th>
+											<th>2</th>
+											<th> iPET (c)<sup>12</sup></th>
+											<th><font size="3">
+												<a href="https://github.com/THUDM/FewNLU/">(code)</a></br>
+												<a href="https://github.com/THUDM/FewNLU/">(desc)</a>
+											</font></th>
+											<th> <font size="3">DeBERTa</br>(xxlarge) </font></th>
+											<th> 83.45 </br><font size="3">±0.90<font></th>
+											<th> 83.12 </br><font size="3">±1.04<font></th>
+											<th> 69.63 </br><font size="3">±2.15<font></th>
+											<th> 91.52/90.72 </br><font size="3">±3.05/±2.68<font></th>
+											<th> 79.92/44.96 </br><font size="3">±1.11/±3.13<font></th>
+											<th> 88.22 </br><font size="3">±1.44<font></th>
+											<th> 93.75 </br><font size="3">±2.99<font></th>
+											<th> 81.68 </th>
 										</tr>
-
 										<tr>
-											<th> PET<sup>1</sup></th>
-											<th> <a href="https://github.com/THUDM/FewNLU/">(code)</a> </th>
-											<th> 82.67 </th>
-											<th> 79.42 </th>
-											<th> 67.20 </th>
-											<th> 91.96/88.63 </th>
-											<th> 78.18/42.79 </th>
-											<th> 80.53 </th>
-											<th> 89.00 </th>
-											<th> 78.51 </th>
+											<th>3</th>
+											<th> noisy (s)<sup>12</sup></th>
+											<th><font size="3">
+												<a href="https://github.com/THUDM/FewNLU/">(code)</a></br>
+												<a href="https://github.com/THUDM/FewNLU/">(desc)</a>
+											</font></th>
+											<th> <font size="3">DeBERTa</br>(xxlarge) </font></th>
+											<th> 81.60 </br><font size="3">±1.54<font></th>
+											<th> 81.95 </br><font size="3">±2.01<font></th>
+											<th> 65.97 </br><font size="3">±2.44<font></th>
+											<th> 91.67/89.17 </br><font size="3">±2.33/±2.95<font></th>
+											<th> 79.85/45.10 </br><font size="3">±1.22/±2.58<font></th>
+											<th> 84.78 </br><font size="3">±3.01<font></th>
+											<th> 90.67 </br><font size="3">±2.53<font></th>
+											<th> 79.69 </th>
 										</tr>
-
 										<tr>
-											<th> ADAPET<sup>1</sup></th>
-											<th> <a href="https://github.com/THUDM/FewNLU/">(code)</a> </th>
-											<th> 81.28 </th>
-											<th> 82.58 </th>
-											<th> 66.50 </th>
-											<th> 89.73/86.63 </th>
-											<th> 77.88/43.05 </th>
-											<th> 83.41 </th>
-											<th> 88.75 </th>
-											<th> 78.74 </th>
-										</tr>
-
-										<tr>
-											<th> P-Tuning<sup>1</sup></th>
-											<th> <a href="https://github.com/THUDM/FewNLU/">(code)</a> </th>
-											<th> 82.25 </th>
-											<th> 82.22 </th>
-											<th> 66.22 </th>
-											<th> 94.20/91.76 </th>
-											<th> 78.45/43.78 </th>
-											<th> 84.62 </th>
-											<th> 86.50 </th>
+											<th>4</th>
+											<th> P-Tuning</th>
+											<th><font size="3">
+												<a href="https://github.com/THUDM/FewNLU/">(code)</a></br>
+												<a href="https://github.com/THUDM/FewNLU/">(desc)</a>
+											</font></th>
+											<th> <font size="3">DeBERTa</br>(xxlarge) </font></th>
+											<th> 82.25 </br><font size="3">±0.85<font></th>
+											<th> 82.22 </br><font size="3">±1.23<font></th>
+											<th> 66.22 </br><font size="3">±1.18<font></th>
+											<th> 94.20/91.76 </br><font size="3">±2.25/±3.30<font></th>
+											<th> 78.45/43.78 </br><font size="3">±1.46/±3.93<font></th>
+											<th> 84.62 </br><font size="3">±4.64<font></th>
+											<th> 86.50 </br><font size="3">±3.70<font></th>
 											<th> 79.41 </th>
 										</tr>
 										<tr>
-											<th> PET+MLM<sup>12</sup></th>
-											<th> <a href="https://github.com/THUDM/FewNLU/">(code)</a> </th>
-											<th> 82.80 </th>
-											<th> 83.30 </th>
-											<th> 58.23 </th>
-											<th> 90.18/87.18 </th>
-											<th> 77.05/40.63 </th>
-											<th> 78.37 </th>
-											<th> 85.75 </th>
-											<th> 76.57 </th>
-										</tr>
-
-										<tr>
-											<th> iPET (single)<sup>123</sup></th>
-											<th> <a href="https://github.com/THUDM/FewNLU/">(code)</a> </th>
-											<th> 81.27 </th>
-											<th> 81.11 </th>
-											<th> 64.75 </th>
-											<th> 89.88/87.70 </th>
-											<th> 79.99/45.23 </th>
-											<th> 86.06 </th>
-											<th> 90.83 </th>
+											<th>5</th>
+											<th> iPET (s)<sup>12</sup></th>
+											<th><font size="3">
+												<a href="https://github.com/THUDM/FewNLU/">(code)</a></br>
+												<a href="https://github.com/THUDM/FewNLU/">(desc)</a>
+											</font></th>
+											<th> <font size="3">DeBERTa</br>(xxlarge) </font></th>
+											<th> 81.27 </br><font size="3">±1.61<font></th>
+											<th> 81.11 </br><font size="3">±1.89<font></th>
+											<th> 64.75 </br><font size="3">±4.27<font></th>
+											<th> 89.88/87.70 </br><font size="3">±5.01/±6.52<font></th>
+											<th> 79.99/45.23 </br><font size="3">±1.94/±2.19<font></th>
+											<th> 86.06 </br><font size="3">±3.03<font></th>
+											<th> 90.83 </br><font size="3">±2.79<font></th>
 											<th> 79.35 </th>
 										</tr>
 
 										<tr>
-											<th> noisy_student(single)<sup>123</sup></th>
-											<th> <a href="https://github.com/THUDM/FewNLU/">(code)</a> </th>
-											<th> 81.60 </th>
-											<th> 81.95 </th>
-											<th> 65.97 </th>
-											<th> 91.67/89.17 </th>
-											<th> 79.85/45.10 </th>
-											<th> 84.78 </th>
-											<th> 90.67 </th>
-											<th> 79.69 </th>
-										</tr>
-
-										<tr>
-											<th> iPET (cross)<sup>123</sup></th>
-											<th> <a href="https://github.com/THUDM/FewNLU/">(code)</a> </th>
-											<th> 83.45 </th>
-											<th> 83.12 </th>
-											<th> 69.63 </th>
-											<th> 91.52/90.72 </th>
-											<th> 79.92/44.96 </th>
-											<th> 88.22 </th>
-											<th> 93.75 </th>
-											<th> 81.68 </th>
-										</tr>
-
-										<tr>
-											<th> noisy_student(cross)<sup>123</sup></th>
-											<th> <a href="https://github.com/THUDM/FewNLU/">(code)</a> </th>
-											<th> 82.28 </th>
-											<th> 79.87 </th>
-											<th> 67.20 </th>
-											<th> 89.73/88.49 </th>
-											<th> 80.51/45.12 </th>
-											<th> 84.13 </th>
-											<th> 90.00 </th>
+											<th>6</th>
+											<th> noisy (c)<sup>12</sup></th>
+											<th><font size="3">
+												<a href="https://github.com/THUDM/FewNLU/">(code)</a></br>
+												<a href="https://github.com/THUDM/FewNLU/">(desc)</a>
+											</font></th>
+											<th> <font size="3">DeBERTa</br>(xxlarge) </font></th>
+											<th> 82.28 </br><font size="3">±1.03<font></th>
+											<th> 79.87 </br><font size="3">±2.59<font></th>
+											<th> 67.20 </br><font size="3">±0.58<font></th>
+											<th> 89.73/88.49 </br><font size="3">±3.68/±3.49<font></th>
+											<th> 80.51/45.12 </br><font size="3">±0.88/±0.90<font></th>
+											<th> 84.13 </br><font size="3">±0.56<font></th>
+											<th> 90.00 </br><font size="3">±2.83<font></th>
 											<th> 79.34 </th>
 										</tr>
+										<tr>
+											<th>7</th>
+											<th> ADAPET</th>
+											<th><font size="3">
+												<a href="https://github.com/THUDM/FewNLU/">(code)</a></br>
+												<a href="https://github.com/THUDM/FewNLU/">(desc)</a>
+											</font></th>
+											<th> <font size="3">DeBERTa</br>(xxlarge) </font></th>
+											<th> 81.28 </br><font size="3">±1.26<font></th>
+											<th> 82.58 </br><font size="3">±2.44<font></th>
+											<th> 66.50 </br><font size="3">±2.11<font></th>
+											<th> 89.73/86.63 </br><font size="3">±6.08/±7.29<font></th>
+											<th> 77.88/43.05 </br><font size="3">±2.55/±3.60<font></th>
+											<th> 83.41 </br><font size="3">±3.46<font></th>
+											<th> 88.75 </br><font size="3">±4.43<font></th>
+											<th> 78.74 </th>
+										</tr>
+
+
+										<tr>
+											<th>8</th>
+											<th> PET</th>
+											<th><font size="3">
+												<a href="https://github.com/THUDM/FewNLU/">(code)</a></br>
+												<a href="https://github.com/THUDM/FewNLU/">(desc)</a>
+											</font></th>
+											<th> <font size="3">DeBERTa</br>(xxlarge) </font></th>
+											<th> 82.67 </br><font size="3">±0.78<font></th>
+											<th> 79.42 </br><font size="3">±2.41<font></th>
+											<th> 67.20 </br><font size="3">±1.34<font></th>
+											<th> 91.96/88.63 </br><font size="3">±3.72/±4.91<font></th>
+											<th> 78.18/42.79 </br><font size="3">±1.59/±2.42<font></th>
+											<th> 80.53 </br><font size="3">±1.82<font></th>
+											<th> 89.00 </br><font size="3">±2.94<font></th>
+											<th> 78.51 </th>
+										</tr>
+
+
+
+										<tr>
+											<th>9</th>
+											<th> PET+MLM<sup>1</sup></th>
+											<th><font size="3">
+												<a href="https://github.com/THUDM/FewNLU/">(code)</a></br>
+												<a href="https://github.com/THUDM/FewNLU/">(desc)</a>
+											</font></th>
+											<th> <font size="3">DeBERTa</br>(xxlarge) </font></th>
+											<th> 82.80 </br><font size="3">±0.97<font></th>
+											<th> 83.30 </br><font size="3">±2.40<font></th>
+											<th> 58.23 </br><font size="3">±4.98<font></th>
+											<th> 90.18/87.18 </br><font size="3">±3.09/±6.17<font></th>
+											<th> 77.05/40.63 </br><font size="3">±1.80/±1.64<font></th>
+											<th> 78.37 </br><font size="3">±4.04<font></th>
+											<th> 85.75 </br><font size="3">±3.40<font></th>
+											<th> 76.57 </th>
+										</tr>
+
+										<tr>
+											<th>10</th>
+											<th> CLS </th>
+											<th><font size="3">
+												<a href="https://github.com/THUDM/FewNLU/">(code)</a></br>
+												<a href="https://github.com/THUDM/FewNLU/">(desc)</a>
+											</font></th>
+											<th> <font size="3">DeBERTa</br>(xxlarge) </font></th>
+											<th> 59.49 </br><font size="3">±1.74<font></th>
+											<th> 49.55 </br><font size="3">±2.23<font></th>
+											<th> 54.08 </br><font size="3">±2.15<font></th>
+											<th> 68.30/60.10 </br><font size="3">±3.96/±10.14<font></th>
+											<th> 75.42/34.23 </br><font size="3">±2.39/±5.02<font></th>
+											<th> 60.82 </br><font size="3">±14.23<font></th>
+											<th> 85.25 </br><font size="3">±2.22<font></th>
+											<th> 61.17 </th>
+										</tr>
+
 									</table>
 								<p align="left" style="line-height:100%">
 									<font size="3">
-										Notes:</br>
-										1. The method uses DeBERTa-xxlarge-v2 as base pretrained model.</br>
-										2. Unlabeled data are used.</br>
-										3. The ensemble technique is used.</br>
-										4. Combination of diverse methods such as prompt-based
-										finetuning, loss regularization and self-training data augmentation etc.
-										Refer to <strong><a href="https://super.gluebenchmark.com">Paper
-									</a></strong> for details.
+										<strong>Notes:</strong>
+										</br>
+										1. Unlabeled data are used.</br>
+										2. The ensemble technique is used.</br>
 									</font>
 								</p>
 								</tbody>
